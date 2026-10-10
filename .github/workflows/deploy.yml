@@ -1,0 +1,48 @@
+name: 일정표 검사·서명·배포
+
+on:
+  push:
+    branches: [main]
+  pull_request:          # 수정 제안(PR)에서는 형식 검사만
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install cryptography
+      - name: 형식 검사
+        run: python tools/validate.py calendar.json
+      - name: 서명하고 배포 폴더 만들기
+        if: github.event_name != 'pull_request'
+        env:
+          SIDEJET_SIGNING_KEY: ${{ secrets.SIDEJET_SIGNING_KEY }}
+        run: python tools/build_site.py calendar.json _site
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
