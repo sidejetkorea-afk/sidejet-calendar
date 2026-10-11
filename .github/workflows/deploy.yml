@@ -1,48 +1,52 @@
 name: 일정표 검사·서명·배포
 
+# calendar.json 을 고쳐 Commit 하면 자동으로 실행됩니다. (Actions 탭 → Run workflow 로 직접 실행도 가능)
 on:
   push:
     branches: [main]
-  pull_request:          # 수정 제안(PR)에서는 형식 검사만
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write          # 배포 파일을 gh-pages 브랜치에 올리기 위해 필요
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: deploy-calendar
+  cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install cryptography
-      - name: 형식 검사
-        run: python tools/validate.py calendar.json
-      - name: 서명하고 배포 폴더 만들기
-        if: github.event_name != 'pull_request'
+      - name: 저장소 받기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+
+      - name: 일정표 형식 검사
+        run: python3 repo/tools/validate_calendar.py repo/calendar.json
+
+      - name: 서명하고 배포 파일 만들기
         env:
           SIDEJET_SIGNING_KEY: ${{ secrets.SIDEJET_SIGNING_KEY }}
-        run: python tools/build_site.py calendar.json _site
-      - if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
+        run: python3 repo/tools/build_site.py --repo repo --out site
 
-  deploy:
-    if: github.event_name != 'pull_request'
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: gh-pages 브랜치에 올리기 (GitHub Pages 가 이 브랜치를 공개)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd site
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "일정표 배포 ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+          owner="${GITHUB_REPOSITORY%%/*}"; name="${GITHUB_REPOSITORY#*/}"
+          echo "배포 완료 — 1~2분 뒤 https://${owner}.github.io/${name}/calendar/ 에서 확인" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 예비 주소(jsDelivr) 캐시 비우기
+        continue-on-error: true
+        run: |
+          for f in sidejet/calendar.json sidejet/calendar.json.sig; do
+            curl -fsS -o /dev/null "https://purge.jsdelivr.net/gh/${GITHUB_REPOSITORY}@gh-pages/${f}" || true
+          done

@@ -1,0 +1,38 @@
+name: 일정표 주간 점검
+
+# 매주 월요일 09:00(한국 시각)에 점검하고, 고칠 것이 있으면 이슈를 만듭니다.
+on:
+  schedule:
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 받기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+
+      - name: 점검
+        run: python3 repo/tools/weekly_check.py --repo repo --report report.md
+
+      - name: 고칠 것이 있으면 이슈 만들기
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          [ -s report.md ] || { echo "점검 통과"; exit 0; }
+          title="[점검] 일정표 확인 필요"
+          num=$(gh issue list --state open --search "일정표 확인 필요 in:title" --json number,title \
+                --jq "[.[] | select(.title == \"${title}\")][0].number // empty")
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body-file report.md
+          else
+            gh issue create --title "$title" --body-file report.md
+          fi
