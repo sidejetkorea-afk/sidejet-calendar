@@ -1,0 +1,27 @@
+name: 일정 오류 신고
+description: 사이드젯의 장 일정(휴장일·거래시간)이 실제와 다를 때 알려 주세요
+title: "[일정 오류] "
+body:
+  - type: input
+    id: date
+    attributes:
+      label: 날짜
+      placeholder: "2026-11-19"
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 무엇이 틀렸나요
+      options:
+        - 휴장인데 개장으로 나옴
+        - 개장인데 휴장으로 나옴
+        - 거래시간(개장·마감 시각)이 다름
+        - 기타
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: 자세한 내용과 근거
+      description: 한국거래소 공지나 기사 링크가 있으면 붙여 주세요.
